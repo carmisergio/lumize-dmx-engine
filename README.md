@@ -26,4 +26,5 @@ You will then find a `lumizedmxengine` file in your folder. Just make it executa
 
 ```
 chmod +x lumizedmxengine
+./lumizedmxengine
 ```
