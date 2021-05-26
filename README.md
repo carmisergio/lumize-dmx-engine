@@ -28,3 +28,28 @@ You will then find a `lumizedmxengine` file in your folder. Just make it executa
 chmod +x lumizedmxengine
 ./lumizedmxengine
 ```
+## MQTT protocol definition
+The DMX Engine is controlled through MQTT.
+Il will respond to commands sent to 
+```
+[BASE_TOPIC]/[CHANNEL]/set
+```
+And it will publish state information on
+```
+[BASE_TOPIC]/[CHANNEL]/set
+```
+Commands and states have to follow the [Home Assitant MQTT Json Schema](https://www.home-assistant.io/integrations/light.mqtt/#json-schema)
+
+Available properties are:
+- `state`
+- `brightness`
+- `transition`
+---
+The status availabilty messages are an exception to this rule:
+
+On startup, the program sends a payload of `online` to
+```
+[BASE_TOPIC]/avail
+```
+
+It also sets an LWT payload of `offline` to the same topic. This command is sent when this client disconnects from the MQTT broker.
