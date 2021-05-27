@@ -486,6 +486,7 @@ int main(int argc, char *argv[])
 	// Block until exit
 	while (programRun)
 	{
+		this_thread::sleep_for(milliseconds(100));
 	}
 
 	// Disconnect
