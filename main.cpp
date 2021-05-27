@@ -12,8 +12,10 @@
 #include "mqtt/async_client.h"
 #include "nlohmann/json.hpp"
 #include <ola/DmxBuffer.h>
+#include <ola/io/SelectServer.h>
 #include <ola/Logging.h>
-#include <ola/client/StreamingClient.h>
+#include <ola/client/ClientWrapper.h>
+#include <ola/Callback.h>
 
 using namespace std;
 using namespace std::chrono;
@@ -361,84 +363,76 @@ void generateStatekeepers()
 	haLightState[0] = false;
 }
 
-// This function gets run in a separate thread and is responsible for computing and outputing each light frame
-void lightProcessor()
+bool SendData(ola::client::OlaClientWrapper *wrapper)
 {
 	ola::DmxBuffer buffer; // A DmxBuffer to hold the data.
 	buffer.Blackout();	   // Set all channels to 0
-						   // Create a new client.
-	ola::client::StreamingClient ola_client(
-		(ola::client::StreamingClient::Options()));
+
+	// Render the current DMX frame
+	for (int i = 0; i < 512; i++)
+	{
+		if (fadeDelta[i] > 0)
+		{
+			curLightBright[i] = curLightBright[i] + fadeDelta[i];
+
+			if (curLightBright[i] >= fadeTarget[i])
+			{
+				curLightBright[i] = fadeTarget[i];
+				fadeDelta[i] = 0;
+
+				if (LOG_FADES)
+					cout << "[LIGHT] Finished fade on CH" << i + 1 << endl;
+			}
+		}
+		else if (fadeDelta[i] < 0)
+		{
+			curLightBright[i] = curLightBright[i] + fadeDelta[i];
+
+			if (curLightBright[i] <= fadeTarget[i])
+			{
+				curLightBright[i] = fadeTarget[i];
+				fadeDelta[i] = 0;
+
+				if (LOG_FADES)
+					cout << "[LIGHT] Finished fade on CH" << i + 1 << endl;
+			}
+		}
+
+		buffer.SetChannel(i, curLightBright[i]); // Put value in DMX frame-buffer
+	}
+
+	// Send the frame to DMX
+	wrapper->GetClient()->SendDMX(DMX_UNIVERSE, buffer, ola::client::SendDMXArgs());
+
+	if (!lightProcessorRun)
+		wrapper->GetSelectServer()->Terminate();
+
+	return true;
+}
+
+// This function gets run in a separate thread and is responsible for computing and outputing each light frame
+void lightProcessor()
+{
+	// Create a new client.
+	ola::InitLogging(ola::OLA_LOG_WARN, ola::OLA_LOG_STDERR);
+	ola::client::OlaClientWrapper wrapper;
 	// Setup the client, this connects to the server
-	if (!ola_client.Setup())
+	if (!wrapper.Setup())
 	{
 		std::cerr << "[DMX]  Ola client setup failed! (check olad status)" << endl;
 		lightProcessorRun = false;
 		programRun = false;
 	}
 
+	// Create a timeout and register it with the SelectServer
+	ola::io::SelectServer *ss = wrapper.GetSelectServer();
+	ss->RegisterRepeatingTimeout(1000 / RENDER_FPS, ola::NewCallback(&SendData, &wrapper));
+
 	cout << "[DMX] Ola client setup successful!" << endl;
 	cout << "[DMX] Starting light output..." << endl;
 
-	while (lightProcessorRun)
-	{
-
-		// Render the current DMX frame
-		for (int i = 0; i < 512; i++)
-		{
-			if (fadeDelta[i] > 0)
-			{
-				curLightBright[i] = curLightBright[i] + fadeDelta[i];
-
-				if (curLightBright[i] >= fadeTarget[i])
-				{
-					curLightBright[i] = fadeTarget[i];
-					fadeDelta[i] = 0;
-
-					if (LOG_FADES)
-						cout << "[LIGHT] Finished fade on CH" << i + 1 << endl;
-				}
-			}
-			else if (fadeDelta[i] < 0)
-			{
-				curLightBright[i] = curLightBright[i] + fadeDelta[i];
-
-				if (curLightBright[i] <= fadeTarget[i])
-				{
-					curLightBright[i] = fadeTarget[i];
-					fadeDelta[i] = 0;
-
-					if (LOG_FADES)
-						cout << "[LIGHT] Finished fade on CH" << i + 1 << endl;
-				}
-			}
-
-			buffer.SetChannel(i, curLightBright[i]); // Put value in DMX frame-buffer
-		}
-
-		// Send the frame to DMX
-		if (!ola_client.SendDmx(DMX_UNIVERSE, buffer))
-		{
-			cout << "[DMX] DMX frame send failed!" << endl;
-
-			if (frame_send_error_count > frame_send_error_max)
-			{
-				lightProcessorRun = false;
-				programRun = false;
-				exit(1);
-			}
-
-			frame_send_error_count++;
-		}
-
-		// for (int i = 0; i <= 20; i++)
-		// {
-		// 	cout << curLightBright[i] << "|";
-		// }
-		// cout << endl;
-
-		this_thread::sleep_for(milliseconds(25));
-	}
+	// Start the main loop
+	ss->Run();
 }
 
 int main(int argc, char *argv[])
