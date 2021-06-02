@@ -4,7 +4,7 @@
     "fps": 40,
     "default_transition": 1,
     "broker host": "192.168.1.61",
-    "base topic": "testtopic",
+    "base topic": "mansardalight",
     "client id": "mansardalight",
     "user": "sergio",
     "password": "sergio06",

@@ -1,3 +1,4 @@
 lumizedmxengine
 *.o
 .vscode/
+secretconfig.json
