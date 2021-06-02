@@ -17,26 +17,24 @@
 #include <ola/client/ClientWrapper.h>
 #include <ola/Callback.h>
 
+#include "parse_config.hpp"
+
 using namespace std;
 using namespace std::chrono;
 
 using json = nlohmann::json;
 
 // CONFIG VARIABLES //
-const string SERVER_ADDRESS{"tcp://192.168.1.61:1883"};
-const string CLIENT_ID{"paho_cpp_sync_consume"};
-const string USER_NAME{"sergio"};
-const string PASSWORD{"sergio06"};
-const string BASE_TOPIC{"mansardalight"};
-const int CHANNELS = 20;
-const float DEFAULT_TRANSITION = 1; // (s)
-const int RENDER_FPS = 40;
-const bool LOG_FADES = true;
-const unsigned int DMX_UNIVERSE = 1;
-const int N_RETRY_ATTEMPTS = 5;
+string BASE_TOPIC;
+int CHANNELS;
+float DEFAULT_TRANSITION; // (s)
+int RENDER_FPS;
+bool LOG_FADES;
+unsigned int DMX_UNIVERSE;
 // END CONFIG VARIABLES //
 
 // INTERNAL CONFIG VARIABLES //
+int N_RETRY_ATTEMPTS = 5;
 const char *LWT_SUBTOPIC = "/avail";
 const char *LWT_PAYLOAD = "offline";
 int initial_connection_retry_delay = 5;
@@ -429,7 +427,7 @@ void lightProcessor()
 	ss->RegisterRepeatingTimeout(1000 / RENDER_FPS, ola::NewCallback(&SendData, &wrapper));
 
 	cout << "[DMX] Ola client setup successful!" << endl;
-	cout << "[DMX] Starting light output..." << endl;
+	cout << "[DMX] Starting light output... Universe: " << DMX_UNIVERSE << endl;
 
 	// Start the main loop
 	ss->Run();
@@ -438,7 +436,22 @@ void lightProcessor()
 int main(int argc, char *argv[])
 {
 	cout << "### WELCOME TO THE LUMIZE DMX ENGINE! ###" << endl;
-	cout << "Initiating startup procedure..." << endl;
+
+	std::string config_file_path = "config.json";
+	if (argc > 1)
+	{
+		config_file_path = argv[1];
+	}
+
+	LumizeConfigParser config(config_file_path);
+	BASE_TOPIC = config.base_topic;
+	CHANNELS = config.channels;
+	DEFAULT_TRANSITION = config.default_transition;
+	RENDER_FPS = config.fps;
+	LOG_FADES = config.log_fades;
+	DMX_UNIVERSE = config.universe;
+
+	std::cout << "Initiating startup procedure..." << endl;
 
 	generateStatekeepers();
 
@@ -446,7 +459,7 @@ int main(int argc, char *argv[])
 	lightProcessorRun = true;
 	std::thread light_processor_thread(lightProcessor);
 
-	mqtt::async_client cli(SERVER_ADDRESS, CLIENT_ID);
+	mqtt::async_client cli(config.host, config.client_id);
 
 	// Compute lwt topic
 	string temp_lwt_topic = BASE_TOPIC;
@@ -455,13 +468,16 @@ int main(int argc, char *argv[])
 
 	// Set MQTT connction options
 	auto connOpts = mqtt::connect_options_builder()
-						.user_name(USER_NAME)
-						.password(PASSWORD)
 						.keep_alive_interval(seconds(30))
 						.automatic_reconnect(seconds(2), seconds(30))
 						.clean_session(false)
 						.will(mqtt::message(BASE_TOPIC + "/avail", "offline", strlen("offline"), 0, true))
 						.finalize();
+	if (config.auth)
+	{
+		connOpts.set_user_name(config.user);
+		connOpts.set_password(config.password);
+	}
 
 	// Install the callback(s) before connecting.
 	callback cb(cli, connOpts);
@@ -472,13 +488,13 @@ int main(int argc, char *argv[])
 
 	try
 	{
-		cout << "[MQTT] Attemtping connection to mqtt server..." << endl;
+		cout << "[MQTT] Attemtping connection to mqtt server... Host: " << config.host << endl;
 		cli.connect(connOpts, nullptr, cb);
 	}
 	catch (const mqtt::exception &exc)
 	{
 		std::cerr << "[MQTT] There was an error connecting to the MQTT broker."
-				  << SERVER_ADDRESS << "'" << exc << std::endl;
+				  << config.host << "'" << exc << std::endl;
 		this_thread::sleep_for(seconds(5));
 		programRun = false;
 	}

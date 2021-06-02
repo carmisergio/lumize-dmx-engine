@@ -1,0 +1,12 @@
+{
+    "channels": 20,
+    "universe": 1,
+    "fps": 40,
+    "default_transition": 1,
+    "broker host": "192.168.1.61",
+    "base topic": "testtopic",
+    "client id": "mansardalight",
+    "user": "sergio",
+    "password": "sergio06",
+    "log fades": true
+}
