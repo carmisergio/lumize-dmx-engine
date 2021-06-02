@@ -132,4 +132,5 @@ LumizeConfigParser::LumizeConfigParser(std::string file_path)
         std::cout << "  - User: " << user << std::endl;
         std::cout << "  - Password: " << password << std::endl;
     }
+    std::cout << "  - Log Fades: " << ((log_fades) ? "enabled" : "disabled") << std::endl;
 }
