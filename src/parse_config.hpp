@@ -14,6 +14,7 @@
 #define DEFAULT_BASE_TOPIC "lumizedmxengine"
 #define DEFAULT_LOG_FADES false
 #define DEFAULT_UNIVERSE 1
+#define DEFAULT_PERSISTENCY ""
 //////////////////////////////// DEFAULT VALUES //////////////////////////////////////
 
 class LumizeConfigParser
@@ -34,6 +35,7 @@ public:
     std::string base_topic = DEFAULT_BASE_TOPIC;
     bool log_fades = DEFAULT_LOG_FADES;
     int universe = DEFAULT_UNIVERSE;
+    std::string persistency = DEFAULT_PERSISTENCY;
 
     LumizeConfigParser(std::string file_path);
 };

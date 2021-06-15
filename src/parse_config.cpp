@@ -76,6 +76,11 @@ LumizeConfigParser::LumizeConfigParser(std::string file_path)
             log_fades = config["log fades"];
         }
 
+        if (config.contains("persistency file"))
+        {
+            persistency = config["persistency file"];
+        }
+
         if (config.contains("universe"))
         {
             universe = config["universe"];
@@ -133,4 +138,5 @@ LumizeConfigParser::LumizeConfigParser(std::string file_path)
         std::cout << "  - Password: " << password << std::endl;
     }
     std::cout << "  - Log Fades: " << ((log_fades) ? "enabled" : "disabled") << std::endl;
+    std::cout << "  - Persistency File: " << persistency << std::endl;
 }

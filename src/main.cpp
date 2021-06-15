@@ -16,6 +16,9 @@
 #include <ola/Logging.h>
 #include <ola/client/ClientWrapper.h>
 #include <ola/Callback.h>
+#include <limits.h>
+#include <unistd.h>
+#include <fstream>
 
 #include "parse_config.hpp"
 
@@ -31,6 +34,7 @@ float DEFAULT_TRANSITION; // (s)
 int RENDER_FPS;
 bool LOG_FADES;
 unsigned int DMX_UNIVERSE;
+std::string PERSISTENCY;
 // END CONFIG VARIABLES //
 
 // INTERNAL CONFIG VARIABLES //
@@ -52,6 +56,8 @@ float fadeDelta[512];
 int fadeTarget[512];
 
 milliseconds fadeTimer[512];
+
+bool persistency_new_data = false;
 
 bool lightProcessorRun = true;
 bool programRun = true;
@@ -125,7 +131,8 @@ class callback : public virtual mqtt::callback,
 	// reconnect with different options.
 	// Another way this can be done manually, if using the same options, is
 	// to just call the async_client::reconnect() method.
-	void reconnect()
+	void
+	reconnect()
 	{
 		std::this_thread::sleep_for(std::chrono::milliseconds(2500));
 		try
@@ -312,6 +319,8 @@ class callback : public virtual mqtt::callback,
 					}
 				}
 				publishLightState(light_id);
+				// updatePersistencyFile();
+				persistency_new_data = true;
 			}
 		}
 		catch (...)
@@ -328,10 +337,37 @@ class callback : public virtual mqtt::callback,
 		data["state"] = state_on_off;
 		data["brightness"] = haLightBright[light_id];
 		string json_data = data.dump();
+		// std::cout << "[MQTT] Sending response: " << json_data << std::endl;
 		string topic = BASE_TOPIC + '/' + to_string(light_id);
 		const char *json_data_char = json_data.c_str();
 		cli_.publish(topic, json_data_char, strlen(json_data_char), 0, true);
 	}
+
+	std::chrono::milliseconds last_persistency_write = milliseconds(0);
+
+	// void updatePersistencyFile()
+	// {
+	// 	std::ofstream persistencyFile;
+	// 	if (PERSISTENCY != "")
+	// 	{
+	// 		if (duration_cast<milliseconds>(system_clock::now().time_since_epoch()) - last_persistency_write > persistency_hit_limiter)
+	// 		{
+	// 			persistencyFile.open(PERSISTENCY);
+	// 			nlohmann::json json_data;
+	// 			json_data["state"] = haLightState;
+	// 			json_data["brightness"] = haLightBright;
+
+	// 			persistencyFile << json_data;
+	// 			persistencyFile.close();
+
+	// 			last_persistency_write = duration_cast<milliseconds>(system_clock::now().time_since_epoch());
+	// 		}
+	// 		else
+	// 		{
+	// 			std::cout << "Throttoling..." << std::endl;
+	// 		}
+	// 	}
+	// }
 
 	void delivery_complete(mqtt::delivery_token_ptr token) override
 	{
@@ -343,6 +379,14 @@ public:
 };
 
 /////////////////////////////////////////////////////////////////////////////
+
+std::string getExecutablePath()
+{
+	char result[PATH_MAX];
+	ssize_t count = readlink("/proc/self/exe", result, PATH_MAX);
+	string exePath = std::string(result, (count > 0) ? count : 0);
+	return exePath.substr(0, exePath.size() - 15);
+}
 
 // Fill the arrays with appropriate values
 void generateStatekeepers()
@@ -433,9 +477,47 @@ void lightProcessor()
 	ss->Run();
 }
 
+void updatePersistencyFile()
+{
+	std::ofstream persistencyFile;
+	if (PERSISTENCY != "")
+	{
+		persistencyFile.open(PERSISTENCY);
+		nlohmann::json json_data;
+		json_data["state"] = haLightState;
+		json_data["brightness"] = haLightBright;
+
+		persistencyFile << json_data;
+		persistencyFile.close();
+	}
+}
+
+void setLightsFromPersistency(nlohmann::json data)
+{
+	for (int i = 0; i < data["state"].size(); i++)
+	{
+		if (!data["state"][i])
+		{
+			curLightBright[i] = 0;
+			haLightBright[i] = data["brightness"][i];
+			haLightState[i] = false;
+			fadeTarget[i] = haLightBright[i];
+		}
+		else
+		{
+			haLightBright[i] = data["brightness"][i];
+			curLightBright[i] = haLightBright[i];
+			haLightState[i] = true;
+			fadeTarget[i] = haLightBright[i];
+		}
+	}
+}
+
 int main(int argc, char *argv[])
 {
 	cout << "### WELCOME TO THE LUMIZE DMX ENGINE! ###" << endl;
+
+	std::cout << getExecutablePath() << std::endl;
 
 	std::string config_file_path = "config.json";
 	if (argc > 1)
@@ -450,10 +532,37 @@ int main(int argc, char *argv[])
 	RENDER_FPS = config.fps;
 	LOG_FADES = config.log_fades;
 	DMX_UNIVERSE = config.universe;
+	PERSISTENCY = config.persistency;
 
 	std::cout << "Initiating startup procedure..." << endl;
 
 	generateStatekeepers();
+
+	if (config.persistency != "")
+	{
+		std::cout << "[PERSISTENCY] Opening file " << PERSISTENCY << std::endl;
+		std::ifstream persistencyFile(PERSISTENCY);
+		if (persistencyFile.good())
+		{
+			std::cout << "[PERSISTENCY] Extrcting info" << std::endl;
+			try
+			{
+				nlohmann::json dejsonized_data;
+				persistencyFile >> dejsonized_data;
+				setLightsFromPersistency(dejsonized_data);
+			}
+			catch (const std::exception &e)
+			{
+				std::cerr << e.what() << '\n';
+			}
+		}
+		else
+		{
+			std::cout << "[PERSISTENCY] File does not exist. Creating." << std::endl;
+			persistencyFile.close();
+			updatePersistencyFile();
+		}
+	}
 
 	// Start Light processor
 	lightProcessorRun = true;
@@ -502,7 +611,12 @@ int main(int argc, char *argv[])
 	// Block until exit
 	while (programRun)
 	{
-		this_thread::sleep_for(milliseconds(100));
+		if (PERSISTENCY != "" && persistency_new_data)
+		{
+			updatePersistencyFile();
+			persistency_new_data = false;
+		}
+		this_thread::sleep_for(milliseconds(500));
 	}
 
 	// Disconnect

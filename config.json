@@ -3,10 +3,11 @@
     "universe": 1,
     "fps": 40,
     "default_transition": 1,
-    "broker host": "192.168.1.61",
-    "base topic": "mansardalight",
-    "client id": "mansardalight",
-    "user": "sergio",
-    "password": "sergio06",
-    "log fades": true
+    "broker host": "192.168.1.100",
+    "base topic": "lumize-dmx-engine",
+    "client id": "lumize-dmx-enginek",
+    "user": "user",
+    "password": "password",
+    "log fades": true,
+    "persistency file": "/path/to/persistency_file.json"
 }
