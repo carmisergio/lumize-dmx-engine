@@ -39,7 +39,7 @@ LumizeConfigParser::LumizeConfigParser(std::string file_path)
         if (config.contains("default_transition"))
         {
             default_transition = config["default_transition"];
-            if (!(default_transition > 0) || default_transition > 999)
+            if (!(default_transition >= 0) || default_transition > 999)
             {
                 std::cout << "[CONFIG] Invaild default transition. Exiting" << std::endl;
                 exit(1);
